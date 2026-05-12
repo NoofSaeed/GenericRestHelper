@@ -112,7 +112,42 @@ To ensure maximum stability, the library includes a built-in Integration Dashboa
 
 *The console output above demonstrates successful handling of GET, POST, PUT, and DELETE operations, including automated error logging.*
 
+---
+### 🔐 Handling Authentication (Bearer Tokens)
+To consume secured APIs that require a Bearer Token, you can easily configure the HttpClient during registration in your Program.cs.
 
+Option 1: Static Token (Quick Setup):
+If you have a fixed token, you can set it globally for the service:
+
+``` C#
+builder.Services.AddHttpClient<RestClientService>(client =>
+{
+    client.DefaultRequestHeaders.Authorization = 
+        new AuthenticationHeaderValue("Bearer", "your_access_token_here");
+});
+```
+Option 2: Dynamic Token (Advanced / Recommended): 
+For dynamic tokens (e.g., tokens from user sessions or IdentityServer), the best practice is to use a DelegatingHandler. This keeps your code clean and handles token logic automatically for every request:
+
+```C#
+// 1. Create a custom handler
+public class AuthHeaderHandler : DelegatingHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        // Fetch your token dynamically (from a service, cache, or storage)
+        var token = "dynamic_token_logic_here"; 
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        
+        return await base.SendAsync(request, cancellationToken);
+    }
+}
+
+// 2. Register it in Program.cs
+builder.Services.AddTransient<AuthHeaderHandler>();
+builder.Services.AddHttpClient<RestClientService>()
+                .AddHttpMessageHandler<AuthHeaderHandler>();
+```
 ---
 ## ⚙️ Configuration
 
