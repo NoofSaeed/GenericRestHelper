@@ -24,63 +24,53 @@
 
 ## 🚀 ASP.NET Core MVC Integration
 
-Integrating **GenericRestHelper** into an MVC project is straightforward thanks to its native support for Dependency Injection (DI).
+The library is designed to integrate seamlessly with the ASP.NET Core dependency injection system. By using the AddGenericRestClient extension, you can configure your API base address and security handlers in one place.
 
-### 1. Register the Service
-
-In your MVC project's `Program.cs` file, register the `HttpClient` and the `RestClientService`:
+### 1. Registration (Program.cs)
+Register the service and configure the underlying HttpClient. You can also chain multiple handlers for tasks like logging, authentication, or retries.
 
 ```csharp
-// Add HttpClient support
-builder.Services.AddHttpClient();
+using GenericRestHelper.Extensions;
 
-// Register the GenericRestHelper Service
-builder.Services.AddScoped<GenericRestHelper.Services.RestClientService>();
+var builder = WebApplication.CreateBuilder(args);
+
+// Register the Generic Rest Client
+builder.Services.AddGenericRestClient(options =>
+{
+    options.BaseAddress = new Uri(builder.Configuration["ApiSettings:BaseUrl"]);
+    options.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+})
+.AddHttpMessageHandler<AuthHeaderHandler>(); // Attach custom logic easily
+
+builder.Services.AddControllersWithViews();
 
 ```
+### 2. Usage in Controllers
+Once registered, simply inject IRestClientService into your controllers. The service will automatically handle serialization and deserialization using the configured client.
 
-### 2. Inject into Controller
-
-Inject the service into your Controller’s constructor to start consuming APIs:
-
-```csharp
-public class ProductsController : Controller
+``` c#
+public class ExpertsController : Controller
 {
-    private readonly RestClientService _restClient;
+    private readonly IRestClientService _apiClient;
 
-    public ProductsController(RestClientService restClient)
+    public ExpertsController(IRestClientService apiClient)
     {
-        _restClient = restClient;
+        _apiClient = apiClient;
     }
 
     public async Task<IActionResult> Index()
     {
-        var url = "https://api.example.com/products";
+        // One-line API call with automatic deserialization
+        var response = await _apiClient.GetAsync<ApiResponse<List<ExpertReadDto>>>("api/experts");
         
-        // Consume the API in one line
-        var products = await _restClient.GetAsync<List<ProductDto>>(url);
+        if (response != null && response.IsSuccess)
+        {
+            return View(response.Data);
+        }
 
-        return View(products);
+        return View(new List<ExpertReadDto>());
     }
 }
-
-```
-
-### 3. Display Data in View
-
-Receive the DTOs in your Razor View (`Index.cshtml`):
-
-```html
-@model List<ProductDto>
-
-<table class="table">
-    @foreach (var item in Model) {
-        <tr>
-            <td>@item.Name</td>
-            <td>@item.Price</td>
-        </tr>
-    }
-</table>
 
 ```
 
@@ -114,39 +104,63 @@ To ensure maximum stability, the library includes a built-in Integration Dashboa
 
 ---
 ### 🔐 Handling Authentication (Bearer Tokens)
-To consume secured APIs that require a Bearer Token, you can easily configure the HttpClient during registration in your Program.cs.
+To consume secured APIs that require a Bearer Token, the library now supports the standard .NET IHttpClientBuilder pattern, allowing for clean and automated token injection.
 
-Option 1: Static Token (Quick Setup):
-If you have a fixed token, you can set it globally for the service:
+Option 1: Static Token (Quick Setup)
+If you have a fixed token, you can set it directly during service registration:
 
 ``` C#
-builder.Services.AddHttpClient<RestClientService>(client =>
+
+builder.Services.AddGenericRestClient(client =>
 {
+    client.BaseAddress = new Uri("https://api.yourdomain.com/");
     client.DefaultRequestHeaders.Authorization = 
-        new AuthenticationHeaderValue("Bearer", "your_access_token_here");
+        new AuthenticationHeaderValue("Bearer", "your_static_token_here");
 });
 ```
-Option 2: Dynamic Token (Advanced / Recommended): 
-For dynamic tokens (e.g., tokens from user sessions or IdentityServer), the best practice is to use a DelegatingHandler. This keeps your code clean and handles token logic automatically for every request:
+Option 2: Dynamic Token (Standard & Recommended)
+For dynamic tokens (e.g., stored in Cookies or Session), use a DelegatingHandler. This keeps your business logic clean by automatically attaching the token to every outgoing request.
 
-```C#
-// 1. Create a custom handler
+1. Create a Custom Handler:
+
+``` C#
 public class AuthHeaderHandler : DelegatingHandler
 {
+    private readonly IHttpContextAccessor _httpContextAccessor;
+
+    public AuthHeaderHandler(IHttpContextAccessor httpContextAccessor)
+    {
+        _httpContextAccessor = httpContextAccessor;
+    }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        // Fetch your token dynamically (from a service, cache, or storage)
-        var token = "dynamic_token_logic_here"; 
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        // Example: Get token from Cookies
+        var token = _httpContextAccessor.HttpContext?.Request.Cookies["JwtToken"];
         
+        if (!string.IsNullOrEmpty(token))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
         return await base.SendAsync(request, cancellationToken);
     }
 }
+```
+2. Register the Handler with the Service:
+Thanks to the latest refactor, you can now chain the handler directly:
 
-// 2. Register it in Program.cs
+``` C#
+// Register the handler first
 builder.Services.AddTransient<AuthHeaderHandler>();
-builder.Services.AddHttpClient<RestClientService>()
-                .AddHttpMessageHandler<AuthHeaderHandler>();
+
+// Register the client and attach the handler
+builder.Services.AddGenericRestClient(client => 
+{
+    client.BaseAddress = new Uri("https://api.yourdomain.com/");
+})
+.AddHttpMessageHandler<AuthHeaderHandler>(); // Chaining support!
+
 ```
 ---
 ## ⚙️ Configuration
