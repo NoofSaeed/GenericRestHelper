@@ -7,10 +7,13 @@ namespace GenericRestHelper.Extensions
     
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddGenericRestClient(this IServiceCollection services)
+        public static IHttpClientBuilder AddGenericRestClient(this IServiceCollection services, Action<HttpClient> configureClient)
         {
-            services.AddHttpClient<IRestClientService, RestClientService>();
-            return services;
+            // تسجيل الخدمة الأساسية
+            services.AddScoped<IRestClientService, RestClientService>();
+
+            // تسجيل الـ HttpClient وإرجاع الـ Builder
+            return services.AddHttpClient<IRestClientService, RestClientService>(configureClient);
         }
     }
 }
