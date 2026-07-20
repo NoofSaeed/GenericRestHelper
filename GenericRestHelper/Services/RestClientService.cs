@@ -51,8 +51,22 @@ namespace GenericRestHelper.Services
                 {
                     var error = await response.Content.ReadAsStringAsync();
                     _logger.LogError("API Error: {StatusCode} - {Content}", response.StatusCode, error);
+
+                    if (!string.IsNullOrWhiteSpace(error))
+                    {
+                        try
+                        {
+                            return JsonSerializer.Deserialize<TResponse>(error, _options);
+                        }
+                        catch
+                        {
+                            return default;
+                        }
+                    }
+
                     return default;
                 }
+
 
                 var content = await response.Content.ReadAsStringAsync();
                 if (string.IsNullOrWhiteSpace(content))
