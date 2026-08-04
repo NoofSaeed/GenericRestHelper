@@ -28,8 +28,13 @@ namespace GenericRestHelper.Services
         public async Task<bool> DeleteAsync(string url, Dictionary<string, string>? headers = null)
         {
             var response = await SendRequestAsync<object, object>(url, HttpMethod.Delete, null, headers);
-            return true; // تعتمد على منطق الـ API الخاص بك
+            return true;
         }
+        public async Task<TResponse?> PostMultipartAsync<TResponse>(string url, MultipartFormDataContent content, Dictionary<string, string>? headers = null)
+            => await SendMultipartRequestAsync<TResponse>(url, HttpMethod.Post, content, headers);
+
+        public async Task<TResponse?> PutMultipartAsync<TResponse>(string url, MultipartFormDataContent content, Dictionary<string, string>? headers = null)
+            => await SendMultipartRequestAsync<TResponse>(url, HttpMethod.Put, content, headers);
         private async Task<TResponse?> SendRequestAsync<TRequest, TResponse>(string url, HttpMethod method, TRequest? data, Dictionary<string, string>? headers)
         {
             try
@@ -81,7 +86,57 @@ namespace GenericRestHelper.Services
                 throw;
             }
         }
+        private async Task<TResponse?> SendMultipartRequestAsync<TResponse>(string url, HttpMethod method, MultipartFormDataContent content, Dictionary<string, string>? headers)
+        {
+            try
+            {
+                var request = new HttpRequestMessage(method, url)
+                {
+                    Content = content
+                };
 
-       
-    }
+                if (headers != null)
+                    foreach (var header in headers) request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+
+                var response = await _httpClient.SendAsync(request);
+                return await HandleResponseAsync<TResponse>(response, url);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogCritical(ex, "Exception during Multipart API call to {Url}", url);
+                throw;
+            }
+        }
+        private async Task<TResponse?> HandleResponseAsync<TResponse>(HttpResponseMessage response, string url)
+        {
+            var content = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("API Error: {StatusCode} - {Content}", response.StatusCode, content);
+
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    try
+                    {
+                        return JsonSerializer.Deserialize<TResponse>(content, _options);
+                    }
+                    catch
+                    {
+                        return default;
+                    }
+                }
+
+                return default;
+            }
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return default;
+            }
+
+            return JsonSerializer.Deserialize<TResponse>(content, _options);
+        }
+    
+}
 }
